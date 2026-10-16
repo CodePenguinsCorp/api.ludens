@@ -20,7 +20,6 @@ variable "sku_name" {
 variable "docker_image_name" {
   description = "Public GHCR image (owner/repo:tag) the App Service pulls at startup"
   type        = string
-  default     = "ghcr.io/gcarvalhow/api.ludens:latest"
 }
 
 variable "app_settings" {

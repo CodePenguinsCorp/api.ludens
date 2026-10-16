@@ -41,6 +41,8 @@ module "app_service" {
   resource_group_name = module.resource_group.name
   location            = module.resource_group.location
 
+  docker_image_name = var.docker_image_name
+
   app_settings = {
     ENVIRONMENT = var.environment
 

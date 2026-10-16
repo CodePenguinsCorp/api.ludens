@@ -8,13 +8,13 @@ on:
 
 jobs:
   test:
-    uses: gcarvalhow/pipelines.ludens/.github/workflows/_test.yaml@master
+    uses: CodePenguinsCorp/pipelines.ludens/.github/workflows/_test.yaml@master
     with:
       working-directory: .
       compose-file: docker/docker-compose.Staging.yml
 
   build:
     needs: test
-    uses: gcarvalhow/pipelines.ludens/.github/workflows/_build.yaml@master
+    uses: CodePenguinsCorp/pipelines.ludens/.github/workflows/_build.yaml@master
     with:
       image-name: api-ludens:ci

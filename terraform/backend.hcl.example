@@ -1,0 +1,4 @@
+resource_group_name  = "rg-codepenguins-ludens-tfstate"
+storage_account_name = "cpludenstfstate"
+container_name       = "tfstate"
+key                  = "ludens/production.tfstate"

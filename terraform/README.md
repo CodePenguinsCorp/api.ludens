@@ -1,5 +1,9 @@
 # terraform/
 
+> Migração CodePenguinsCorp: os recursos descritos abaixo são da equipe anterior.
+> Siga o [guia da nova infraestrutura](https://github.com/CodePenguinsCorp/docs.ludens/blob/master/team/infra-codepenguins.md).
+> Copie e ajuste `backend.hcl.example` e use `terraform init -backend-config=backend.hcl`.
+
 Infraestrutura Azure de `api.ludens`: Resource Group, Azure Database for PostgreSQL Flexible
 Server, Azure Communication Services (e-mail transacional) e o Azure App Service (Linux,
 container) que roda a API. Segredos (senha do Postgres, `JWT_SECRET_KEY`, connection string do
