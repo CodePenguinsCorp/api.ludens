@@ -1,5 +1,11 @@
 # api.ludens
 
+A fatia de conta do comprador usa os endpoints existentes de perfil, senha,
+troca de e-mail e exclusão. As confirmações removem o cookie de refresh;
+a exclusão desativa a conta preservando sua identidade para o histórico
+comercial. Contratos e testes estão na
+[documentação da conta](https://github.com/CodePenguinsCorp/docs.ludens/blob/feat/buyer-account-management/specs/identity-user-management/buyer-account.md).
+
 Para usar o frontend Vercel com a API no seu PC, consulte o
 [guia Docker + túnel](https://github.com/CodePenguinsCorp/docs.ludens/blob/master/team/local-api-vercel.md).
 

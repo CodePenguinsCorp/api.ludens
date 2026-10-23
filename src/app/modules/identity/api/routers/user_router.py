@@ -17,7 +17,7 @@ from app.modules.identity.application.schemas.request import (
 )
 from app.modules.identity.application.schemas.response import TokenResponse, UserResponse
 
-from app.modules.identity.shared import set_refresh_cookie
+from app.modules.identity.shared import REFRESH_COOKIE, REFRESH_PATH, set_refresh_cookie
 from app.modules.identity.application.usecases.user_usecase import UserUseCase
 
 router = APIRouter(prefix="/identity/users", tags=["02.Identity - User"])
@@ -51,10 +51,12 @@ async def request_email_change(
 
 @router.patch("/email/change", status_code=status.HTTP_204_NO_CONTENT)
 async def confirm_email_change(
+    response: Response,
     token: str = Query(...), 
     session: AsyncSession = Depends(get_db)
 ) -> None:
     await UserUseCase(session).confirm_email_change(token)
+    response.delete_cookie(REFRESH_COOKIE, path=REFRESH_PATH)
 
 @router.post("/deletion", status_code=status.HTTP_202_ACCEPTED)
 async def request_deletion(
@@ -65,10 +67,12 @@ async def request_deletion(
 
 @router.delete("/deletion", status_code=status.HTTP_204_NO_CONTENT)
 async def confirm_deletion(
+    response: Response,
     token: str = Query(...),
     session: AsyncSession = Depends(get_db)
 ) -> None:
     await UserUseCase(session).confirm_account_deletion(token)
+    response.delete_cookie(REFRESH_COOKIE, path=REFRESH_PATH)
 
 @router.get("", response_model=Page[UserResponse])
 async def list_users(
