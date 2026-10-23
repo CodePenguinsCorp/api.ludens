@@ -37,8 +37,12 @@ class PurchaseUseCase:
 
         now = await self._now()
         if existing is not None:
-            if existing.status is OrderStatus.PENDING and (reservation.status is not ReservationStatus.OPEN or reservation.expires_at <= now or existing.expires_at <= now):
-                await self._expire(existing, reservation, now)
+            if existing.status is OrderStatus.PENDING:
+                if reservation.status is not ReservationStatus.OPEN or reservation.expires_at <= now or existing.expires_at <= now:
+                    await self._expire(existing, reservation, now)
+            elif existing.status is not OrderStatus.PAID:
+                # Orders closed earlier cannot be resumed; the buyer needs a new reservation.
+                raise ConflictError("A reserva não está mais válida. Faça uma nova reserva para continuar.")
             return await self._response(existing)
 
         if not bookable.on_sale or bookable.starts_at <= now or reservation.status is not ReservationStatus.OPEN or reservation.expires_at <= now:
