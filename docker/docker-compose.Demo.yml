@@ -1,0 +1,65 @@
+name: ludens-demo
+
+x-api: &api
+  build:
+    context: ..
+  image: ludens-api-demo:local
+  environment: &environment
+    ENVIRONMENT: development
+    DATABASE_URL: postgresql+asyncpg://ludens:${POSTGRES_PASSWORD:?Run scripts/Start-Demo.ps1 first}@postgres:5432/ludens
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Run scripts/Start-Demo.ps1 first}
+    REFRESH_COOKIE_SECURE: "true"
+    ALLOWED_ORIGINS: '["https://codepenguins-web-ludens.vercel.app"]'
+    FRONTEND_BASE_URL: https://codepenguins-web-ludens.vercel.app
+    EMAIL_BACKEND: smtp
+    SMTP_HOST: mailpit
+    SMTP_PORT: "1025"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ludens
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/Start-Demo.ps1 first}
+      POSTGRES_DB: ludens
+    volumes:
+      - demo-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ludens -d ludens"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:8025:8025"
+  migrations:
+    <<: *api
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  api:
+    <<: *api
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: ["tunnel", "--no-autoupdate", "--url", "http://api:8000"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  demo-pg-data:

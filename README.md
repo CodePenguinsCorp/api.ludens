@@ -1,5 +1,8 @@
 # api.ludens
 
+Para usar o frontend Vercel com a API no seu PC, consulte o
+[guia Docker + túnel](https://github.com/CodePenguinsCorp/docs.ludens/blob/master/team/local-api-vercel.md).
+
 <p align="center">
   <img src=".github/assets/logo.png" alt="ludens" width="180">
 
