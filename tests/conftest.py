@@ -5,6 +5,7 @@ import pytest_asyncio
 from app.core.domain import Model
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.engine import make_url
 
 # Must run before any `import app...`: Settings (src/app/config.py) requires
 # DATABASE_URL and JWT_SECRET_KEY with no default, and modules imported by usecase
@@ -14,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 # `drop_all` at teardown, so tests must never inherit whatever DATABASE_URL a
 # developer's shell/.env.local happens to already export (e.g. the real dev
 # Postgres) — that would silently wipe it.
-TEST_DATABASE_URL = "postgresql+asyncpg://ludens:ludens@localhost:5433/ludens_test"
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "postgresql+asyncpg://ludens:ludens@localhost:5433/ludens_test")
+if make_url(TEST_DATABASE_URL).database != "ludens_test":
+    raise RuntimeError("Tests require the isolated ludens_test database.")
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-with-at-least-32-bytes-long")
 

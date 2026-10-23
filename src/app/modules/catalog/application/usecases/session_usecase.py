@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.domain.errors import ConflictError, DomainError, NotFoundError
+from app.modules.booking.dependencies import reservation_counts, cancel_session_reservations
 
 from app.modules.catalog.domain.enumerations import SessionStatus
 from app.modules.catalog.domain.aggregates import SeatCounts, Session
@@ -22,6 +23,7 @@ from app.modules.catalog.infrastructure.repositories import SessionRepository, S
 
 class SessionUseCase:
     def __init__(self, session: AsyncSession) -> None:
+        self._db = session
         self._show_repository = ShowRepository(session)
         self._session_repository = SessionRepository(session)
 
@@ -52,8 +54,8 @@ class SessionUseCase:
         if session.status is SessionStatus.CANCELLED:
             raise ConflictError("Não é possível editar uma sessão cancelada.")
 
-        counts = SeatCounts(0, 0)
         now = datetime.now(timezone.utc)
+        counts = SeatCounts(*(await reservation_counts(self._db, [session.id], now)).get(session.id, (0, 0)))
 
         if req.starts_at <= now:
             raise DomainError("A data da sessão deve ser futura.")
@@ -78,16 +80,18 @@ class SessionUseCase:
             raise ConflictError("A sessão já está cancelada.")
 
         session.cancel()
+        await cancel_session_reservations(self._db, session.id, datetime.now(timezone.utc))
         await self._session_repository.save(session)
 
     async def delete_session(self, session_id: UUID) -> None:
         session = await self._lock(session_id)
-        counts = SeatCounts(0, 0)
+        counts = SeatCounts(*(await reservation_counts(self._db, [session.id], datetime.now(timezone.utc))).get(session.id, (0, 0)))
 
         if counts.tickets_sold > 0:
             raise ConflictError("Cancele a sessão em vez de excluir.")
 
         session.deactivate()
+        await cancel_session_reservations(self._db, session.id, datetime.now(timezone.utc))
         await self._session_repository.save(session)
 
     async def get_session_detail(self, session_id: UUID, *, is_admin: bool) -> AdminSessionResponse | SessionDetailResponse:
@@ -100,7 +104,7 @@ class SessionUseCase:
             raise NotFoundError("Espetáculo não encontrado.")
 
         now = datetime.now(timezone.utc)
-        counts = SeatCounts(0, 0)
+        counts = SeatCounts(*(await reservation_counts(self._db, [session.id], now)).get(session.id, (0, 0)))
 
         if is_admin:
             return session_response(session, counts, now)
