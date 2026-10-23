@@ -31,12 +31,13 @@ async def update(
 ) -> AdminSessionResponse:
     return await SessionUseCase(session).update_session(session_id, body)
 
-@router.post("/{session_id}/cancel", status_code=202, dependencies=[Depends(require_admin)])
+@router.post("/{session_id}/cancel", status_code=202)
 async def cancel(
     session_id: UUID, 
+    admin: User = Depends(require_admin),
     session: AsyncSession = Depends(get_db)
 ) -> Response:
-    await SessionUseCase(session).cancel_session(session_id)
+    await SessionUseCase(session).cancel_session(session_id, admin.id)
     return Response(status_code=202)
 
 @router.delete("/{session_id}", status_code=204, dependencies=[Depends(require_admin)])

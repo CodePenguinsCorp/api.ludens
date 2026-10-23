@@ -21,7 +21,23 @@ class OrderStatus(str, Enum):
 
 class TicketStatus(str, Enum):
     VALID = "valid"
+    USED = "used"
     CANCELLED = "cancelled"
+
+
+class CancelOrigin(str, Enum):
+    BUYER = "buyer"
+    SESSION = "session"
+
+
+def simulated_refund_percent(starts_at: datetime, now: datetime) -> int | None:
+    """Simulated refund tier (RN02). None means the buyer may no longer cancel online."""
+    hours = (starts_at - now).total_seconds() / 3600
+    if hours >= 48:
+        return 100
+    if hours >= 24:
+        return 50
+    return None
 
 
 class PaymentOrder(Model):
@@ -49,6 +65,15 @@ class PaymentOrder(Model):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    cancel_origin: Mapped[CancelOrigin | None] = mapped_column(
+        SAEnum(CancelOrigin, native_enum=False, length=20, values_callable=lambda e: [s.value for s in e]),
+        nullable=True,
+    )
+    cancel_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    refund_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    refund_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class Ticket(Model):
@@ -64,3 +89,4 @@ class Ticket(Model):
         nullable=False,
         default=TicketStatus.VALID,
     )
+    checked_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

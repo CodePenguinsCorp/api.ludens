@@ -64,11 +64,11 @@ class Reservation(AggregateRoot, Model):
         if self.status is ReservationStatus.OPEN and (force or self.expires_at <= now):
             self.raise_event(lambda v: ReservationExpired(version=v, id=self.id, timestamp=now))
 
-    def cancel(self, now: datetime) -> None:
+    def cancel(self, now: datetime, *, allow_confirmed: bool = False) -> None:
         self.expire(now)
-        if self.status is ReservationStatus.CONFIRMED:
-            raise ConflictError("Uma reserva confirmada deve seguir o fluxo de reembolso.")
-        if self.status is ReservationStatus.OPEN:
+        if self.status is ReservationStatus.CONFIRMED and not allow_confirmed:
+            raise ConflictError("Uma reserva confirmada deve ser cancelada pelo pedido.")
+        if self.status in (ReservationStatus.OPEN, ReservationStatus.CONFIRMED):
             self.raise_event(lambda v: ReservationCancelled(version=v, id=self.id, timestamp=now))
 
     def confirm(self, now: datetime) -> None:

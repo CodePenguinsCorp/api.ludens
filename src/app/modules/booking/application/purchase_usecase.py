@@ -197,8 +197,11 @@ class PurchaseUseCase:
             full_price_cents=order.full_price_cents, half_price_cents=order.half_price_cents,
             amount_cents=order.amount_cents, status=order.status.value,
             expires_at=order.expires_at, resolved_at=order.resolved_at,
+            cancelled_at=order.cancelled_at, cancel_reason=order.cancel_reason,
+            cancel_origin=order.cancel_origin.value if order.cancel_origin else None,
+            refund_percent=order.refund_percent, refund_cents=order.refund_cents,
             tickets=[TicketResponse(id=t.id, ticket_type=t.ticket_type, price_cents=t.price_cents,
-                                    code=t.code, status=t.status.value) for t in tickets],
+                                    code=t.code, status=t.status.value, checked_in_at=t.checked_in_at) for t in tickets],
         )
 
     async def _expire(self, order: PaymentOrder, reservation: Reservation | None, now: datetime) -> None:
