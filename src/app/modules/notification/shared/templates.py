@@ -1,3 +1,24 @@
+from html import escape
+
+
+def order_paid_email(payload: dict) -> tuple[str, str]:
+    subject = "Seus ingressos de demonstração — Ludens"
+    rows = "".join(
+        f"<li>{escape(ticket['ticket_type'])}: <strong>{escape(ticket['code'])}</strong></li>"
+        for ticket in payload["tickets"]
+    )
+    html_body = (
+        "<h1>Compra simulada confirmada</h1>"
+        f"<p><strong>{escape(payload['show_title'])}</strong></p>"
+        f"<p>Sessão: {escape(payload['session_starts_at'])} · {escape(payload['venue'])}</p>"
+        f"<p>Total demonstrativo: R$ {payload['amount_cents'] / 100:.2f}</p>"
+        f"<ul>{rows}</ul>"
+        "<p>Este pedido e estes ingressos são de demonstração. Nenhum pagamento real foi realizado.</p>"
+        "<p>Os ingressos permanecem disponíveis na área Meus ingressos mesmo se este e-mail não chegar.</p>"
+    )
+    return subject, html_body
+
+
 def password_reset_email(reset_url: str) -> tuple[str, str]:
     subject = "Redefinição de senha — Ludens"
     html_body = (

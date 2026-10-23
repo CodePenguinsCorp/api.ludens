@@ -11,7 +11,9 @@ from app.core.shared import Page, PaginationParams
 from app.modules.booking.application.schemas import (
     RebookingOptionsResponse, RebookingSessionResponse, ReservationRequest, ReservationResponse,
 )
-from app.modules.booking.domain.reservation import Reservation
+from app.modules.booking.domain.reservation import Reservation, ReservationStatus
+from app.modules.booking.domain.purchase import OrderStatus, PaymentOrder
+from app.modules.catalog.domain.aggregates import Session
 from app.modules.booking.infrastructure.reservation_repository import ReservationRepository
 from app.modules.catalog.dependencies import lock_booking_session, rebooking_sessions
 
@@ -85,7 +87,15 @@ class ReservationUseCase:
         return Page(items=[reservation_response(r, now) for r in reservations], total=total, page=pagination.page, size=pagination.size)
 
     async def get(self, reservation_id: UUID, user_id: UUID, *, cancel: bool = False) -> ReservationResponse:
-        reservation = await self._repository.find_owned(reservation_id, user_id)
+        reservation = await self._repository.find_owned(reservation_id, user_id, lock=False)
+        if reservation is None:
+            raise NotFoundError("Reserva não encontrada.")
+        await self._db.scalar(select(Session).where(Session.id == reservation.session_id).with_for_update())
+        await self._db.scalar(select(PaymentOrder).where(
+            PaymentOrder.reservation_id == reservation.id,
+            PaymentOrder.status == OrderStatus.PENDING,
+        ).with_for_update())
+        reservation = await self._repository.find_owned(reservation_id, user_id, lock=True)
         if reservation is None:
             raise NotFoundError("Reserva não encontrada.")
         now = datetime.now(timezone.utc)
@@ -94,6 +104,8 @@ class ReservationUseCase:
         else:
             reservation.expire(now)
         await self._repository.save(reservation)
+        if reservation.status in {ReservationStatus.CANCELLED, ReservationStatus.EXPIRED}:
+            await self._repository.finish_pending_order(reservation, now)
         await self._db.flush()
         return reservation_response(reservation, now)
 

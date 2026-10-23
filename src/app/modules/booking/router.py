@@ -8,6 +8,8 @@ from app.core.shared.pagination import make_pagination_params
 from app.dependencies import get_db
 from app.modules.booking.application.reservation_usecase import ReservationUseCase
 from app.modules.booking.application.schemas import RebookingOptionsResponse, ReservationRequest, ReservationResponse
+from app.modules.booking.application.purchase_schemas import OrderResponse, SimulatedPaymentRequest
+from app.modules.booking.application.purchase_usecase import PurchaseUseCase
 from app.modules.identity.dependencies import get_current_user
 from app.modules.identity.domain.aggregates import User
 
@@ -43,3 +45,30 @@ async def cancel(reservation_id: UUID, response: Response, user: User = Depends(
 async def rebooking_options(reservation_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     response.headers["Cache-Control"] = "no-store"
     return await ReservationUseCase(db).rebooking_options(reservation_id, user.id)
+
+
+purchase_router = APIRouter(prefix="/booking", tags=["03.Booking - Purchase"])
+
+
+@purchase_router.post("/reservations/{reservation_id}/checkout", response_model=OrderResponse, status_code=201)
+async def start_checkout(reservation_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await PurchaseUseCase(db).start(reservation_id, user)
+
+
+@purchase_router.get("/orders", response_model=list[OrderResponse])
+async def list_orders(response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await PurchaseUseCase(db).list(user)
+
+
+@purchase_router.get("/orders/{order_id}", response_model=OrderResponse)
+async def get_order(order_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await PurchaseUseCase(db).get(order_id, user)
+
+
+@purchase_router.post("/orders/{order_id}/simulate", response_model=OrderResponse)
+async def simulate_payment(order_id: UUID, body: SimulatedPaymentRequest, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await PurchaseUseCase(db).simulate(order_id, body.outcome, user)

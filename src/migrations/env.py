@@ -23,6 +23,7 @@ import app.modules.identity.domain.entities.email_change_token  # noqa: F401,E40
 import app.modules.catalog.domain.aggregates.show  # noqa: F401,E402
 import app.modules.catalog.domain.aggregates.session  # noqa: F401,E402
 import app.modules.booking.domain.reservation  # noqa: F401,E402
+import app.modules.booking.domain.purchase  # noqa: F401,E402
 
 config = context.config
 

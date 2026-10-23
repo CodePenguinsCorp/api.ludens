@@ -6,6 +6,7 @@ from app.modules.notification.shared import (
     account_deletion_requested_email,
     email_change_requested_email,
     email_changed_courtesy_email,
+    order_paid_email,
     password_reset_email,
 )
 
@@ -34,4 +35,10 @@ async def handle_account_deletion_requested(payload: dict) -> None:
     confirm_url = f"{settings.frontend_base_url}/confirmar-exclusao-de-conta?token={payload['token']}"
     subject, html_body = account_deletion_requested_email(confirm_url)
 
+    await get_email_service().send(payload["email"], subject, html_body)
+
+
+@register("OrderPaid")
+async def handle_order_paid(payload: dict) -> None:
+    subject, html_body = order_paid_email(payload)
     await get_email_service().send(payload["email"], subject, html_body)

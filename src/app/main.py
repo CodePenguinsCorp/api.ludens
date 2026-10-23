@@ -15,7 +15,7 @@ from app.core.domain import AuthError, ConflictError, DomainError, ForbiddenErro
 
 from app.modules.catalog.router import router as catalog_router
 from app.modules.identity.router import router as identity_router
-from app.modules.booking.router import router as booking_router
+from app.modules.booking.router import purchase_router as booking_purchase_router, router as booking_router
 from app.modules.booking.expiry import run as run_reservation_expiry
 from app.modules.notification import handlers as notification_handlers  # noqa: F401
 
@@ -64,6 +64,7 @@ app.add_middleware(
 app.include_router(identity_router, prefix="/api")
 app.include_router(catalog_router, prefix="/api")
 app.include_router(booking_router, prefix="/api")
+app.include_router(booking_purchase_router, prefix="/api")
 
 @app.get("/health")
 async def health():
