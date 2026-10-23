@@ -1,8 +1,12 @@
 import bcrypt
+from app.core.domain import DomainError
 
 class PasswordService:
     def hash(self, plain: str) -> str:
-        return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        encoded = plain.encode("utf-8")
+        if len(encoded) > 72:
+            raise DomainError("A senha é muito longa. Use menos caracteres.")
+        return bcrypt.hashpw(encoded, bcrypt.gensalt()).decode("utf-8")
 
     def verify(self, plain: str, hashed: str) -> bool:
         try:

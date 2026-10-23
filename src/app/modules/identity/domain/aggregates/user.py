@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.domain import AggregateRoot, DomainEvent, Model
@@ -23,6 +23,10 @@ from app.modules.identity.domain.value_objects import CPF, Email
 
 class User(AggregateRoot, Model):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("uq_users_email_active", "email", unique=True, postgresql_where=text("is_active = true")),
+        Index("uq_users_cpf_active", "cpf", unique=True, postgresql_where=text("is_active = true")),
+    )
 
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     cpf: Mapped[str] = mapped_column(String(11), nullable=False)
