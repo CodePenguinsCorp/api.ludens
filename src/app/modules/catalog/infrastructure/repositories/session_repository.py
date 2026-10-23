@@ -16,6 +16,7 @@ class SessionRepository(AggregateRepository[Session]):
             select(Session)
             .where(Session.id == session_id, Session.is_active.is_(True))
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
 
         return result.scalar_one_or_none()

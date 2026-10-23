@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.shared import Page, PaginationParams
 from app.core.domain.errors import ConflictError, NotFoundError
+from app.modules.booking.dependencies import reservation_counts, cancel_session_reservations
 
 from app.modules.catalog.application.schemas.request import ShowRequest
 from app.modules.catalog.domain.aggregates import Genre, SeatCounts, Session, Show
@@ -68,6 +69,7 @@ def _session_summary(session: Session, counts: SeatCounts, now: datetime) -> Ses
 
 class ShowUseCase:
     def __init__(self, session: AsyncSession) -> None:
+        self._db = session
         self._show_repository = ShowRepository(session)
         self._session_repository = SessionRepository(session)
         self._genre_repository = GenreRepository(session)
@@ -113,7 +115,9 @@ class ShowUseCase:
     async def delete_show(self, show_id: UUID) -> None:
         show = await self._require_show(show_id)
         sessions = await self._session_repository.find_all_by(show_id=show.id, order_by=["starts_at"])
-        counts = {s.id: SeatCounts(0, 0) for s in sessions}
+        for session in sorted(sessions, key=lambda s: s.id):
+            await self._session_repository.find_by_id_for_update(session.id)
+        counts = await self._counts(sessions, datetime.now(timezone.utc))
 
         if any(counts.get(s.id, SeatCounts(0, 0)).tickets_sold > 0 for s in sessions):
             raise ConflictError(
@@ -121,6 +125,8 @@ class ShowUseCase:
             )
 
         show.deactivate()
+        for session in sessions:
+            await cancel_session_reservations(self._db, session.id, datetime.now(timezone.utc))
         await self._show_repository.save(show)
 
     async def search(
@@ -167,7 +173,7 @@ class ShowUseCase:
             for s in await self._session_repository.find_all_by(show_id=show.id, order_by=["starts_at"])
             if s.starts_at > now
         ]
-        counts = {s.id: SeatCounts(0, 0) for s in sessions}
+        counts = await self._counts(sessions, now)
         genre = await self._require_genre(show.genre_id)
 
         return ShowDetailResponse(
@@ -198,7 +204,12 @@ class ShowUseCase:
 
     async def _view_for(self, show: Show) -> AdminShowResponse:
         sessions = await self._session_repository.find_all_by(show_id=show.id, order_by=["starts_at"])
-        counts = {s.id: SeatCounts(0, 0) for s in sessions}
+        now = datetime.now(timezone.utc)
+        counts = await self._counts(sessions, now)
         genre = await self._require_genre(show.genre_id)
 
-        return _show_response(show, genre.name, sessions, counts, datetime.now(timezone.utc))
+        return _show_response(show, genre.name, sessions, counts, now)
+
+    async def _counts(self, sessions: list[Session], now: datetime) -> dict[UUID, SeatCounts]:
+        counts = await reservation_counts(self._db, [s.id for s in sessions], now)
+        return {session_id: SeatCounts(*values) for session_id, values in counts.items()}
