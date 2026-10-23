@@ -5,6 +5,7 @@ from sqlalchemy import case, func, or_, select
 
 from app.core.infrastructure.repositories import AggregateRepository
 from app.modules.booking.domain.reservation import Reservation, ReservationStatus
+from app.modules.booking.domain.purchase import OrderStatus, PaymentOrder
 
 
 class ReservationRepository(AggregateRepository[Reservation]):
@@ -15,10 +16,11 @@ class ReservationRepository(AggregateRepository[Reservation]):
             Reservation.user_id == user_id, Reservation.idempotency_key == key,
         ))
 
-    async def find_owned(self, reservation_id: UUID, user_id: UUID) -> Reservation | None:
-        return await self._session.scalar(select(Reservation).where(
-            Reservation.id == reservation_id, Reservation.user_id == user_id,
-        ).with_for_update().execution_options(populate_existing=True))
+    async def find_owned(self, reservation_id: UUID, user_id: UUID, *, lock: bool = True) -> Reservation | None:
+        stmt = select(Reservation).where(Reservation.id == reservation_id, Reservation.user_id == user_id)
+        if lock:
+            stmt = stmt.with_for_update()
+        return await self._session.scalar(stmt.execution_options(populate_existing=True))
 
     async def list_owned(self, user_id: UUID, *, page: int, size: int) -> tuple[list[Reservation], int]:
         total = await self._session.scalar(select(func.count()).select_from(Reservation).where(Reservation.user_id == user_id))
@@ -46,6 +48,27 @@ class ReservationRepository(AggregateRepository[Reservation]):
         return {session_id: (sold, held) for session_id, sold, held in result}
 
     async def expire_due(self, now: datetime, *, user_id: UUID | None = None, limit: int = 100) -> int:
+        order_stmt = select(PaymentOrder).where(
+            PaymentOrder.status == OrderStatus.PENDING, PaymentOrder.expires_at <= now,
+        )
+        if user_id is not None:
+            order_stmt = order_stmt.where(PaymentOrder.user_id == user_id)
+        pending_orders = list(await self._session.scalars(
+            order_stmt.order_by(PaymentOrder.expires_at, PaymentOrder.id).limit(limit)
+            .with_for_update(skip_locked=True).execution_options(populate_existing=True)
+        ))
+        expired_order_count = 0
+        for order in pending_orders:
+            reservation = await self._session.scalar(select(Reservation).where(
+                Reservation.id == order.reservation_id,
+            ).with_for_update().execution_options(populate_existing=True))
+            if reservation is not None and reservation.status == ReservationStatus.OPEN:
+                reservation.expire(now, force=True)
+                await self.save(reservation)
+            order.status = OrderStatus.EXPIRED
+            order.resolved_at = now
+            expired_order_count += 1
+
         stmt = select(Reservation).where(Reservation.status == ReservationStatus.OPEN, Reservation.expires_at <= now)
         if user_id is not None:
             stmt = stmt.where(Reservation.user_id == user_id)
@@ -56,9 +79,17 @@ class ReservationRepository(AggregateRepository[Reservation]):
             reservation.expire(now)
             await self.save(reservation)
         await self._session.flush()
-        return len(reservations)
+        return len(reservations) + expired_order_count
 
     async def cancel_for_session(self, session_id: UUID, now: datetime) -> None:
+        orders = await self._session.scalars(select(PaymentOrder).join(
+            Reservation, PaymentOrder.reservation_id == Reservation.id,
+        ).where(
+            Reservation.session_id == session_id, PaymentOrder.status == OrderStatus.PENDING,
+        ).order_by(PaymentOrder.id).with_for_update(of=PaymentOrder))
+        for order in orders:
+            order.status = OrderStatus.CANCELLED
+            order.resolved_at = now
         rows = await self._session.scalars(select(Reservation).where(
             Reservation.session_id == session_id, Reservation.status == ReservationStatus.OPEN,
         ).order_by(Reservation.id).with_for_update().execution_options(populate_existing=True))
@@ -66,3 +97,12 @@ class ReservationRepository(AggregateRepository[Reservation]):
             reservation.cancel(now)
             await self.save(reservation)
         await self._session.flush()
+
+    async def finish_pending_order(self, reservation: Reservation, now: datetime) -> None:
+        order = await self._session.scalar(select(PaymentOrder).where(
+            PaymentOrder.reservation_id == reservation.id,
+            PaymentOrder.status == OrderStatus.PENDING,
+        ).with_for_update())
+        if order is not None:
+            order.status = OrderStatus.EXPIRED if reservation.status == ReservationStatus.EXPIRED else OrderStatus.CANCELLED
+            order.resolved_at = now

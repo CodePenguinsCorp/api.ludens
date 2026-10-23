@@ -13,6 +13,8 @@ from app.core.shared import PaginationParams
 from app.modules.booking.application.reservation_usecase import ReservationUseCase
 from app.modules.booking.application.schemas import ReservationRequest
 from app.modules.booking.domain.reservation import Reservation, ReservationStatus
+from app.modules.booking.application.purchase_usecase import PurchaseUseCase
+from app.modules.booking.domain.purchase import PaymentOrder, Ticket
 from app.modules.booking.infrastructure.reservation_repository import ReservationRepository
 from app.modules.catalog.application.schemas.request import SessionRequest
 from app.modules.catalog.application.usecases.session_usecase import SessionUseCase
@@ -341,3 +343,171 @@ async def test_rebooking_has_no_options_for_unpublished_or_deleted_show(session,
         show.deactivate()
     await session.flush()
     assert (await ReservationUseCase(session).rebooking_options(previous.id, users[0].id)).sessions == []
+
+
+async def test_simulated_purchase_issues_one_demo_ticket_per_unit_and_is_idempotent(session):
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0], full=2, half=1)
+    usecase = PurchaseUseCase(session)
+
+    pending = await usecase.start(reservation.id, users[0])
+    resumed = await usecase.start(reservation.id, users[0])
+    assert pending.id == resumed.id
+    assert pending.status == "pending" and pending.is_demonstration is True
+    assert pending.amount_cents == 2502
+    assert pending.expires_at == reservation.expires_at
+    assert pending.tickets == []
+
+    paid = await usecase.simulate(pending.id, "approved", users[0])
+    repeated = await usecase.simulate(pending.id, "approved", users[0])
+    assert paid.status == "paid" and len(paid.tickets) == 3
+    assert repeated.status == "paid" and len(repeated.tickets) == 3
+    assert len({ticket.code for ticket in paid.tickets}) == 3
+    assert all(ticket.code.startswith("DEMO-") and ticket.status == "valid" for ticket in paid.tickets)
+    assert [ticket.ticket_type for ticket in paid.tickets].count("full") == 2
+    assert [ticket.ticket_type for ticket in paid.tickets].count("half") == 1
+    assert await session.scalar(select(func.count()).select_from(Ticket).where(Ticket.order_id == pending.id)) == 3
+    assert await session.scalar(select(func.count()).select_from(Event).where(
+        Event.event_type == "OrderPaid", Event.aggregate_id == str(pending.id),
+    )) == 1
+    assert (await ReservationUseCase(session).get(reservation.id, users[0].id)).status == "confirmed"
+
+
+async def test_simulated_decline_cancels_reservation_and_releases_inventory(session):
+    event, users, *_ = await seed(session, capacity=2)
+    reservation = await reserve(session, event.id, users[0], full=2)
+    usecase = PurchaseUseCase(session)
+    order = await usecase.start(reservation.id, users[0])
+
+    declined = await usecase.simulate(order.id, "declined", users[0])
+    assert declined.status == "declined" and declined.tickets == []
+    assert (await ReservationUseCase(session).get(reservation.id, users[0].id)).status == "cancelled"
+    assert (await SessionUseCase(session).get_session_detail(event.id, is_admin=False)).available_count == 2
+    with pytest.raises(ConflictError):
+        await usecase.simulate(order.id, "approved", users[0])
+
+
+async def test_simulated_expiration_expires_order_and_releases_reservation(session):
+    event, users, *_ = await seed(session, capacity=2)
+    reservation = await reserve(session, event.id, users[0], full=2)
+    usecase = PurchaseUseCase(session)
+    order = await usecase.start(reservation.id, users[0])
+
+    expired = await usecase.simulate(order.id, "expired", users[0])
+    assert expired.status == "expired" and expired.tickets == []
+    assert (await ReservationUseCase(session).get(reservation.id, users[0].id)).status == "expired"
+    assert (await SessionUseCase(session).get_session_detail(event.id, is_admin=False)).available_count == 2
+    with pytest.raises(ConflictError):
+        await usecase.simulate(order.id, "approved", users[0])
+
+
+async def test_cancelling_reservation_closes_its_pending_order(session):
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0])
+    order = await PurchaseUseCase(session).start(reservation.id, users[0])
+
+    await ReservationUseCase(session).get(reservation.id, users[0].id, cancel=True)
+    assert (await PurchaseUseCase(session).get(order.id, users[0])).status == "cancelled"
+
+
+async def test_expiry_worker_marks_pending_order_expired_once(session):
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0])
+    order = await PurchaseUseCase(session).start(reservation.id, users[0])
+    expired_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    entity = await session.get(Reservation, reservation.id)
+    entity.expires_at = expired_at
+    order_entity = await session.get(PaymentOrder, order.id)
+    order_entity.expires_at = expired_at
+    await session.flush()
+
+    repository = ReservationRepository(session)
+    assert await repository.expire_due(datetime.now(timezone.utc)) == 1
+    assert await repository.expire_due(datetime.now(timezone.utc)) == 0
+    assert (await PurchaseUseCase(session).get(order.id, users[0])).status == "expired"
+
+
+async def test_cancelling_reservation_closes_its_pending_order(session):
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0])
+    order = await PurchaseUseCase(session).start(reservation.id, users[0])
+
+    await ReservationUseCase(session).get(reservation.id, users[0].id, cancel=True)
+    assert (await PurchaseUseCase(session).get(order.id, users[0])).status == "cancelled"
+
+
+async def test_cancelling_reservation_closes_its_pending_order(session):
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0])
+    order = await PurchaseUseCase(session).start(reservation.id, users[0])
+
+    await ReservationUseCase(session).get(reservation.id, users[0].id, cancel=True)
+    assert (await PurchaseUseCase(session).get(order.id, users[0])).status == "cancelled"
+
+
+async def test_expired_or_foreign_reservation_cannot_be_confirmed(session):
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0])
+    usecase = PurchaseUseCase(session)
+    with pytest.raises(NotFoundError):
+        await usecase.start(reservation.id, users[1])
+
+    order = await usecase.start(reservation.id, users[0])
+    entity = await session.get(Reservation, reservation.id)
+    entity.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    expired = await usecase.simulate(order.id, "approved", users[0])
+    assert expired.status == "expired" and expired.tickets == []
+    assert (await ReservationUseCase(session).get(reservation.id, users[0].id)).status == "expired"
+    with pytest.raises(ConflictError):
+        await usecase.start(reservation.id, users[0])
+
+
+async def test_order_history_is_private_and_includes_tickets(session):
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0])
+    usecase = PurchaseUseCase(session)
+    order = await usecase.start(reservation.id, users[0])
+    await usecase.simulate(order.id, "approved", users[0])
+
+    history = await usecase.list(users[0])
+    assert len(history) == 1 and history[0].id == order.id and len(history[0].tickets) == 1
+    assert await usecase.list(users[1]) == []
+    with pytest.raises(NotFoundError):
+        await usecase.get(order.id, users[1])
+
+
+async def test_http_checkout_simulation_and_purchase_history_journey(session):
+    from app.dependencies import get_db
+    from app.main import app
+
+    event, users, *_ = await seed(session)
+    reservation = await reserve(session, event.id, users[0], full=1, half=1)
+    token, _ = TokenService().issue_access(users[0])
+
+    async def db_override():
+        yield session
+
+    app.dependency_overrides[get_db] = db_override
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            client.headers["Authorization"] = f"Bearer {token}"
+            checkout_path = f"/api/booking/reservations/{reservation.id}/checkout"
+            started = await client.post(checkout_path)
+            resumed = await client.post(checkout_path)
+            assert started.status_code == 201 and started.json()["status"] == "pending"
+            assert resumed.json()["id"] == started.json()["id"]
+            order_id = started.json()["id"]
+
+            paid = await client.post(f"/api/booking/orders/{order_id}/simulate", json={"outcome": "approved"})
+            assert paid.status_code == 200 and paid.json()["status"] == "paid"
+            assert len(paid.json()["tickets"]) == 2
+            assert all(ticket["is_demonstration"] is True for ticket in paid.json()["tickets"])
+
+            history = await client.get("/api/booking/orders")
+            detail = await client.get(f"/api/booking/orders/{order_id}")
+            assert history.status_code == detail.status_code == 200
+            assert history.json()[0]["id"] == order_id
+            assert [ticket["code"] for ticket in detail.json()["tickets"]] == [ticket["code"] for ticket in paid.json()["tickets"]]
+            assert history.headers["cache-control"] == "no-store"
+    finally:
+        app.dependency_overrides.clear()

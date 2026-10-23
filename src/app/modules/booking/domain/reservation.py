@@ -60,8 +60,8 @@ class Reservation(AggregateRoot, Model):
         reservation.raise_event(lambda v: ReservationCreated(version=v, id=uuid4(), timestamp=now, **values))
         return reservation
 
-    def expire(self, now: datetime) -> None:
-        if self.status is ReservationStatus.OPEN and self.expires_at <= now:
+    def expire(self, now: datetime, *, force: bool = False) -> None:
+        if self.status is ReservationStatus.OPEN and (force or self.expires_at <= now):
             self.raise_event(lambda v: ReservationExpired(version=v, id=self.id, timestamp=now))
 
     def cancel(self, now: datetime) -> None:

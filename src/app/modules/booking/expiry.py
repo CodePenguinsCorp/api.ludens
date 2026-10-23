@@ -24,4 +24,4 @@ async def run() -> None:
         except Exception:
             logger.exception("Falha ao expirar reservas; o próximo lote tentará novamente.")
             count = 0
-        await asyncio.sleep(0 if count == 100 else settings.reservation_expiry_interval_seconds)
+        await asyncio.sleep(0 if count >= 100 else settings.reservation_expiry_interval_seconds)

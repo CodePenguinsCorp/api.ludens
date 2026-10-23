@@ -220,5 +220,6 @@ fluxo Trunk-Based: `/team-ludens:tbd-start` (issue + branch) → implementação
 - [Specs das features (N1)](https://github.com/gcarvalhow/docs.ludens/tree/HEAD/specs)
 - [Ambiente de desenvolvimento](https://github.com/gcarvalhow/docs.ludens/blob/HEAD/team/development.md)
 
-> **Status:** base de código e infraestrutura de processo prontas; os módulos de
-> negócio começam a ser implementados a partir das specs.
+> **Status:** reservas, compra demonstrativa, emissão de ingressos e histórico
+> do comprador estão implementados. A simulação não cria cobrança nem integra
+> um gateway.
