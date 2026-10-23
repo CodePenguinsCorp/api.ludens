@@ -6,6 +6,7 @@ from app.modules.notification.shared import (
     account_deletion_requested_email,
     email_change_requested_email,
     email_changed_courtesy_email,
+    order_cancelled_email,
     order_paid_email,
     password_reset_email,
 )
@@ -41,4 +42,12 @@ async def handle_account_deletion_requested(payload: dict) -> None:
 @register("OrderPaid")
 async def handle_order_paid(payload: dict) -> None:
     subject, html_body = order_paid_email(payload)
+    await get_email_service().send(payload["email"], subject, html_body)
+
+
+@register("OrderCancelled")
+async def handle_order_cancelled(payload: dict) -> None:
+    if not payload.get("email"):
+        return
+    subject, html_body = order_cancelled_email(payload)
     await get_email_service().send(payload["email"], subject, html_body)

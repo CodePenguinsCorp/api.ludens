@@ -10,7 +10,11 @@ from app.modules.booking.application.reservation_usecase import ReservationUseCa
 from app.modules.booking.application.schemas import RebookingOptionsResponse, ReservationRequest, ReservationResponse
 from app.modules.booking.application.purchase_schemas import OrderResponse, SimulatedPaymentRequest
 from app.modules.booking.application.purchase_usecase import PurchaseUseCase
-from app.modules.identity.dependencies import get_current_user
+from app.modules.booking.application.cancellation_schemas import (
+    AdminOrderResponse, CancellationPreviewResponse, CancellationRequest, CheckInRequest, CheckInResponse,
+)
+from app.modules.booking.application.cancellation_usecase import CancellationUseCase
+from app.modules.identity.dependencies import get_current_user, require_admin
 from app.modules.identity.domain.aggregates import User
 
 router = APIRouter(prefix="/booking/reservations", tags=["03.Booking - Reservation"])
@@ -72,3 +76,27 @@ async def get_order(order_id: UUID, response: Response, user: User = Depends(get
 async def simulate_payment(order_id: UUID, body: SimulatedPaymentRequest, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     response.headers["Cache-Control"] = "no-store"
     return await PurchaseUseCase(db).simulate(order_id, body.outcome, user)
+
+
+@purchase_router.get("/orders/{order_id}/cancellation-preview", response_model=CancellationPreviewResponse)
+async def cancellation_preview(order_id: UUID, response: Response, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await CancellationUseCase(db).preview(order_id, user)
+
+
+@purchase_router.post("/orders/{order_id}/cancel", response_model=OrderResponse)
+async def cancel_order(order_id: UUID, response: Response, body: CancellationRequest | None = None, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await CancellationUseCase(db).cancel(order_id, user, body.reason if body else None)
+
+
+@purchase_router.get("/admin/orders", response_model=Page[AdminOrderResponse], dependencies=[Depends(require_admin)])
+async def admin_orders(response: Response, status: str | None = None, session_id: UUID | None = None, pagination: PaginationParams = Depends(reservation_pagination), db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await CancellationUseCase(db).list_all(pagination, status=status, session_id=session_id)
+
+
+@purchase_router.post("/tickets/check-in", response_model=CheckInResponse, dependencies=[Depends(require_admin)])
+async def check_in(body: CheckInRequest, response: Response, db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    return await CancellationUseCase(db).check_in(body.code)

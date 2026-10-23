@@ -3,6 +3,7 @@ from .templates import (
     account_deletion_requested_email,
     email_change_requested_email,
     email_changed_courtesy_email,
+    order_cancelled_email,
     order_paid_email,
     password_reset_email,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "account_deletion_requested_email",
     "email_change_requested_email",
     "email_changed_courtesy_email",
+    "order_cancelled_email",
     "order_paid_email",
     "password_reset_email",
 ]

@@ -74,13 +74,13 @@ class SessionUseCase:
         await self._session_repository.save(session)
         return session_response(session, counts, now)
 
-    async def cancel_session(self, session_id: UUID) -> None:
+    async def cancel_session(self, session_id: UUID, admin_id: UUID | None = None) -> None:
         session = await self._lock(session_id)
         if session.status is SessionStatus.CANCELLED:
             raise ConflictError("A sessão já está cancelada.")
 
         session.cancel()
-        await cancel_session_reservations(self._db, session.id, datetime.now(timezone.utc))
+        await cancel_session_reservations(self._db, session.id, datetime.now(timezone.utc), admin_id)
         await self._session_repository.save(session)
 
     async def delete_session(self, session_id: UUID) -> None:

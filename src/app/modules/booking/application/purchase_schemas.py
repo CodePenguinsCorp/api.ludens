@@ -15,7 +15,8 @@ class TicketResponse(BaseModel):
     ticket_type: Literal["full", "half"]
     price_cents: int
     code: str
-    status: Literal["valid", "cancelled"]
+    status: Literal["valid", "used", "cancelled"]
+    checked_in_at: datetime | None = None
     is_demonstration: Literal[True] = True
 
 
@@ -34,5 +35,11 @@ class OrderResponse(BaseModel):
     status: Literal["pending", "paid", "declined", "expired", "cancelled"]
     expires_at: datetime
     resolved_at: datetime | None
+    cancelled_at: datetime | None = None
+    cancel_origin: Literal["buyer", "session"] | None = None
+    cancel_reason: str | None = None
+    refund_percent: int | None = None
+    refund_cents: int | None = None
+    is_refund_simulated: Literal[True] = True
     tickets: list[TicketResponse]
     is_demonstration: Literal[True] = True
